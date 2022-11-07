@@ -1,0 +1,246 @@
+---
+title: "DAPC analysis, population genomics of Pau Brasil"
+output:
+  html_document:
+    df_print: paged
+---
+
+
+```{r}
+#Open libraries
+library(vcfR)
+library(ape)
+library(pegas)
+library(seqinr)
+library(ggplot2)
+library(adegenet)
+library(gtools)
+packageDescription("adegenet", fields = "Version")
+
+#All code in this Notebook can be found in the vignette on adegenet provided by Thibaut Jombart.
+#https://adegenet.r-forge.r-project.org/files/tutorial-dapc.pdf
+
+library(poppr)
+library(tidyverse)
+library(reshape2)
+library(knitr)
+```
+
+
+```{r}
+#R Setting the working directory, and reading in data3.vcf, from 2022.08.16
+#setwd("C:/Users/edeli/OneDrive/Projets_Recherche/2018_Paubrasilia/Manuscripts/Scripts/DAPC/DAPC_data5moda//")
+setwd("C://Users/Phyto1/OneDrive/Projets_Recherche/2018_Paubrasilia/Manuscripts/Scripts/DAPC/DAPC_data5moda")
+
+#vcf <- read.vcfR("data5.vcf", verbose = FALSE )# This is a file that only contains 
+vcf <- read.vcfR("prunned_data_mode_v2.vcf", verbose = FALSE )# This is a file that only contains #Selected the file that was treated with plink 
+
+vcf
+
+
+```
+
+The next lines of code help visualise the amount of missing data in each sample. 
+
+```{r}
+gt <- extract.gt(vcf, element = "GT", as.numeric=TRUE)
+myMiss <- apply(gt, MARGIN = 2, function(x){ sum(is.na(x)) })
+myMiss <- myMiss/nrow(vcf)
+
+library(RColorBrewer)
+palette(brewer.pal(n=12, name = 'Set3'))
+
+par(mar = c(12,4,4,2))
+barplot(myMiss, las = 2, col = 1:12)
+title(ylab = "Missingness (%)")
+
+
+pdf("barplot_missing.pdf", width=12, height=8)
+par(mar = c(17,4,4,2))
+barplot(myMiss, las = 2, col = 1:12)
+title(ylab = "Missingness (%)")
+dev.off()
+```
+
+
+```{r}
+vcftest<-vcf
+gt<-extract.gt(vcf, element = "GT")
+FORMAT<-vcf@gt[,1]
+gt1<-cbind(FORMAT, gt)
+vcftest@gt<-gt1
+vcftest
+```
+
+In this section starts the DAPC analyses
+
+```{r}
+
+my_genind <- vcfR2genind(vcf)#CONVERSION of vcf file
+my_genind
+
+```
+
+
+```{r}
+
+grp <- find.clusters(my_genind, max.n.clust=20, n.pca=38, n.clust = 5)
+grp
+# keep 39 PCs
+# best BIC score is k=5
+
+names <- grp %>% names()
+pops2 <- grp$grp
+```
+
+
+
+```{r}
+
+datagenlight <- vcfR2genlight(vcf)
+
+mat<-as.matrix(datagenlight)
+mat1 <- na.replace(mat, replace = TRUE, method="mean")
+xval <- xvalDapc(mat1, pops2, n.pca.max = 39, training.set = 0.9,
+                                    result = "groupMean", center = TRUE, scale = FALSE,
+                                   n.pca = NULL, n.rep = 1000, xval.plot = TRUE)
+
+
+```
+
+```{r}
+xval[2:6]
+```
+
+
+```{r}
+dapc1 <- dapc(my_genind, pops2, n.pca=5, n.da=5)
+#We chose to keep 5 PCs because they explain around 80% of variance in the data
+#Because there are less than 10 clusters we can keep all the discriminant axes
+dapc1
+
+```
+
+
+```{r}
+myCol <- c("orchid","cornflowerblue","coral","yellowgreen","turquoise") #change depending on group composition in find.clusters()
+
+pdf("dapc_compoplot.pdf",width=12, height=12, paper="a4r")
+par(mar = c(17, 5, 0.05, 0.05))
+compoplot(dapc1, show.lab=TRUE, legend=FALSE, col.pal=myCol)
+dev.off()
+
+compoplot(dapc1, show.lab=TRUE, legend=FALSE, col.pal=myCol)
+
+```
+```{r}
+dapc1$ind.coord[,2] <- -dapc1$ind.coord[,2]
+dapc1$loadings[,2] <- -dapc1$loadings[,2]
+
+dapc1$ind.coord[,1] <- -dapc1$ind.coord[,1]
+dapc1$loadings[,1] <- -dapc1$loadings[,1]
+
+dapc1$ind.coord
+
+scatter(dapc1, ratio.pca=0.2, bg="white", pch=20, cell=0,
+cstar=0, col=myCol, solid=.4, cex=3, clab=0, grid=TRUE,
+mstree=FALSE, scree.da=TRUE, scree.pca = TRUE, posi.pca="topleft", posi.da="bottomleft", ratio = 0.2,
+leg=TRUE, txt.leg=c("Arruda-BA","Cafe","Laranja","Arruda-RJ","North"),posi.leg ="bottomright")
+
+pdf("Dapc1_5PCs_v1.pdf")
+scatter(dapc1, ratio.pca=0.2, bg="white", pch=20, cell=0,
+cstar=0, col=myCol, solid=.4, cex=3, clab=0, grid=TRUE,
+mstree=FALSE, scree.da=TRUE, scree.pca = TRUE, posi.pca="topleft", posi.da="bottomleft", ratio = 0.2,
+leg=TRUE, txt.leg=c("Arruda-BA","Cafe","Laranja","Arruda-RJ","North"),posi.leg ="bottomright")
+dev.off()
+
+pdf("Dapc1_5PCs_v2.pdf")
+scatter(dapc1, ratio.pca=0.2, bg="white", pch=20, cell=0,
+cstar=0, col=myCol, solid=.4, cex=3, clab=0, 
+mstree=FALSE, scree.da=TRUE, scree.pca = TRUE, posi.pca="topleft", posi.da="bottomleft", ratio = 0.2,
+leg=TRUE, txt.leg=c("Arruda-BA","Cafe","Laranja","Arruda-RJ","North"),posi.leg ="bottomright")
+dev.off()
+
+
+```
+
+
+```{r}
+
+scatter(dapc1,1,1, col=myCol, bg="white",
+scree.da=FALSE, legend=FALSE, solid=.6)
+
+pdf("Dapc1_5PCs_Pc1.pdf")
+scatter(dapc1,1,1, col=myCol, bg="white",
+scree.da=FALSE, legend=FALSE, solid=.6)
+dev.off()
+
+
+```
+
+```{r}
+scatter(dapc1,2,2, col=myCol, bg="white",
+scree.da=FALSE, legend=FALSE, solid=.6)
+
+pdf("Dapc1_5PCs_Pc2.pdf")
+scatter(dapc1,2,2, col=myCol, bg="white",
+scree.da=FALSE, legend=FALSE, solid=.6)
+dev.off()
+```
+```{r}
+dapc2 <- dapc(datagenlight, pops2, n.da=5, n.pca=39)
+temp <- optim.a.score(dapc2)
+
+pdf("optim_a_score_DAPC2.pdf")
+optim.a.score(dapc2)
+dev.off()
+
+```
+
+```{r}
+names(temp)
+```
+
+```{r}
+temp$mean
+temp$best
+```
+
+
+```{r}
+dapc3 <- dapc(my_genind, pops2, n.pca=temp$best, n.da=5)
+dapc3
+```
+
+
+
+```{r}
+
+scatter(dapc3,1,3, ratio.pca=0.2, bg="white", pch=20, cell=0,
+cstar=0, col=myCol, solid=.4, cex=3, clab=0, grid=TRUE,
+mstree=FALSE, scree.da=TRUE, scree.pca = TRUE, posi.pca="topleft", posi.da="bottomleft", ratio = 0.2,
+leg=TRUE, txt.leg=c("Arruda-BA","Cafe","Laranja","Arruda-RJ","North"),posi.leg ="bottomright")
+
+pdf("Dapc3_5PCs_PC1_PC3.pdf")
+scatter(dapc3,1,3, ratio.pca=0.2, bg="white", pch=20, cell=0,
+cstar=0, col=myCol, solid=.4, cex=3, clab=0, grid=TRUE,
+mstree=FALSE, scree.da=TRUE, scree.pca = TRUE, posi.pca="topleft", posi.da="bottomleft", ratio = 0.2,
+leg=TRUE, txt.leg=c("Arruda-BA","Cafe","Laranja","Arruda-RJ","North"),posi.leg ="bottomright")
+dev.off()
+
+
+```
+
+
+```{r}
+scatter(dapc3,1,1, col=myCol, bg="white",
+scree.da=FALSE, legend=TRUE, solid=.6)
+```
+
+
+```{r}
+scatter(dapc3,1,3, col=myCol, bg="white",
+scree.da=FALSE, legend=TRUE, solid=.6)
+```
+
+

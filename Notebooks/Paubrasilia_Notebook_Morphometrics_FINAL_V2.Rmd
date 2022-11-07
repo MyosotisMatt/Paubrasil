@@ -1,0 +1,783 @@
+---
+title: "Paubrasilia Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Loading libraries
+```{r}
+library(ade4)
+library(mclust)
+library(cluster)
+#library(fpc)
+#library(gclus)
+library(vegan)
+#library(pvclust)
+library(factoextra)
+library(FactoMineR)
+library(ggplot2)
+library(missMDA)
+#library(PCDimension)
+library(PerformanceAnalytics)
+library(dplyr)
+library(tidyverse)
+#library(tree)
+library(coin)
+library(car)
+library(rpart)
+library(ggpubr)
+library(MASS)
+library(randomForest)
+#library(dbscan)
+#library(rattle)
+library(ggfortify)
+
+```
+
+Set working directory
+```{r}
+getwd()
+setwd("C:/Users/edeli/OneDrive/Projets_Recherche/2018_Paubrasilia/Manuscripts/Scripts/morphometrics/")
+dir()
+
+```
+
+
+Load Data
+```{r}
+#Cleaned.LeafData <- read.csv2("C:/Users/edeli/OneDrive/Projets_Recherche/2018_Paubrasilia/Matt/Cleaned.#LeafData.csv", row.names=1, stringsAsFactors=FALSE)
+
+Cleaned.LeafData <- read.csv("C:/Users/edeli/OneDrive/Projets_Recherche/2018_Paubrasilia/Manuscripts/Scripts/morphometrics/Cleand_LeafData_v4.csv", row.names=1, stringsAsFactors=FALSE)
+
+head(Cleaned.LeafData)      
+dim(Cleaned.LeafData)
+
+# Use first column as sample names
+# Use first row as headers
+# Remove "string as factors"
+# Use commas as decimal delimiter
+
+#Here I exclude the lines that represent species which are cultivated.
+```
+
+
+Here we want to find out if there is a relation between collection date and leaf size.
+
+```{r}
+#monthdata <- read.csv("C:/Users/edeli/OneDrive/Projets_Recherche/2018_Paubrasilia/Matt/Paubrasilia_morphometrics-MATT.csv", stringsAsFactors=FALSE)
+monthdata <- read.csv("C:/Users/edeli/OneDrive/Projets_Recherche/2018_Paubrasilia/Manuscripts/Scripts/morphometrics/Paubrasilia_morphometrics-MATT.csv", stringsAsFactors=FALSE)
+
+#monthdata <- read.table("C:/Users/edeli/OneDrive/Projets_Recherche/2018_Paubrasilia/Matt/Paubrasilia_morphometrics-MATT2.txt", #stringsAsFactors=FALSE, header=TRUE, sep="\t")
+
+#This doesn't really work because the .cvs file doesn't have month collection data. It could be easy to create.
+
+monthdata1 <- data.frame(monthdata$Collected_Month, monthdata$Foliole_max_lenght_AVG, monthdata$Foliole_min_length_AVG, monthdata$Foliole_max_width_AVG, monthdata$Foliole_min_width_AVG, monthdata$AVG_Prop_R1_leaf, monthdata$FOLIOLE_per_pinna_AVG, monthdata$PINNAE_AVG, monthdata$Pinna_length_AVG, monthdata$AVG_Ratio_Foliole)
+
+chart.Correlation(monthdata1, histogram = TRUE, pch=19)
+        
+```
+
+We start by selecting only the variables we are interested in for the analysis and removing the text columns (Latitue, Longitude, etc ...)
+
+```{r}
+Cleaned.LeafData2 <- Cleaned.LeafData[,c(2,11:29)]
+names(Cleaned.LeafData2)
+# [1] "State"                   "PINNAE_AVG"              "Pet_AVG"                 "RACHIS1_AVG"             "AVG_Prop_R1_leaf"       
+# [6] "AVG_Prop_R1_pinna"       "Pinna_length_AVG"        "FOLIOLE_per_pinna_AVG"   "AVG_nb_foliole_per_leaf" "Foliole_shape"          
+#[11] "FOLIOLE_LENGTH_AVG"      "Foliole_max_lenght_AVG"  "Foliole_min_length_AVG"  "FOLIOLE_WIDTH_AVG"       "Foliole_max_width_AVG"  
+#[16] "Foliole_min_width_AVG"   "AVG_Ratio_Foliole"       "AVG_ratio_foliole_max"   "AVG_ratio_foliole_min"   "LeavesNotes"
+
+Cleaned.LeafData2 <- Cleaned.LeafData2[, -c(10,20)] #removes qualitative columns
+#names(Cleaned.LeafData2[,-c(10,20)])
+# [1] "State"                   "PINNAE_AVG"              "Pet_AVG"                 "RACHIS1_AVG"             "AVG_Prop_R1_leaf"       
+# [6] "AVG_Prop_R1_pinna"       "Pinna_length_AVG"        "FOLIOLE_per_pinna_AVG"   "AVG_nb_foliole_per_leaf" "Foliole_max_lenght_AVG" 
+#[11] "Foliole_min_length_AVG"  "FOLIOLE_WIDTH_AVG"       "Foliole_max_width_AVG"   "Foliole_min_width_AVG"   "AVG_Ratio_Foliole"      
+#[16] "AVG_ratio_foliole_max"   "AVG_ratio_foliole_min" 
+
+Cleaned.LeafData2$Morphotype<-Cleaned.LeafData$MORPHOTYPE
+
+```
+
+Then We calculate the total amount of missing data.
+
+```{r}
+sum(is.na(Cleaned.LeafData2[,2:18]))/sum(is.na(Cleaned.LeafData2[,2:18])+!is.na(Cleaned.LeafData2[,2:18]))*100
+```
+
+Because the overall amount of missing data is very low (0.6%), we perform an impuattion by PCA on the data to replace missing values by values equal to the mean of the corresponding variable.
+This alows us to perform further analysis without having to remove rows that have missing data.
+
+```{r}
+estim_all.q<-estim_ncpPCA(Cleaned.LeafData2[,2:18], ncp.min = 0, ncp.max = 14, scale = TRUE, 
+                          method.cv ="gcv", nbsim = 100, pNA = 0.05, threshold=1e-4)
+
+impute_all.q<-imputePCA(Cleaned.LeafData2[,2:18], ncp = estim_all.q$ncp, scale = TRUE, method = "Regularized")
+impute.pca<-PCA(impute_all.q$completeObs)
+
+resMI <- MIPCA(Cleaned.LeafData2[,2:18],ncp=estim_all.q$ncp)
+## Visualization on the PCA map
+plot.MIPCA(resMI)
+
+```
+
+```{r}
+Data.imputepca<-impute_all.q$completeObs
+dim(Data.imputepca)
+###missing data
+sum(is.na(Data.imputepca))/sum(is.na(Data.imputepca)+!is.na(Data.imputepca))*100
+```
+
+We now have a dataframe with 56 rows, 17 columns and 0% missing data.
+We can get an idea of what the data contains so far.
+
+
+```{r}
+summary(Data.imputepca)
+```
+
+We then want to know which variables are correlated in order to remove them. This will insure the further analyses are not biased towards multiple correlated values.
+
+```{r}
+df <- as.data.frame(Data.imputepca)
+
+df %>%
+     gather() %>%
+     ggplot(aes(value)) +
+     facet_wrap(~ key, scales = "free") +
+     geom_histogram(aes(y=..density..) ,fill="dodgerblue") + ggtitle("Paubrasilia histograms of raw variables") + geom_density()     
+```
+
+```{r}
+chart.Correlation(Data.imputepca, histogram = TRUE, pch=19)
+```
+
+We can observe that the average number of pinnae seems to be correlated with 4 other variables, and the average length of the first rachis is correlated to 3 other variables.
+
+The average number of folioles per pinnae is strongly correlated to the average number of folioles per leaf.
+In addition, the max length, min length, average length, max width, min width and average width are all correlated. 
+
+#Edit from Edelin, 29th of March 2022: I looked at the dataset again, and I reselected five traits that were not correlated in the analysis.
+FOLIOLE_LENGTH_AVG, Pet_AVG, RACHIS1_AVG, Pinna_length_AVG, AVG_Ratio_Foliole (-0.520856907 to 0.587071031)
+All other characters are strongly correlated with Foliole length, +/- 0.6
+
+```{r}
+##UncorrelatedData <- Data.imputepca[,-c(1,3,7,9:13)]
+#PINNAE_AVG, RACHIS1_AVG, AVG_foliole_per_pinnae, Foliole_max_length, Foliole_min_length, FOLIOLE_LENGTH_AVG, Foliole_max_width and Foliole_min_width
+
+#or 
+UncorrelatedData <- Data.imputepca[,c(2,3,6,9,15)]
+#In total, we will remove 8 variables:
+#AVG_foliole_per_leaf, Foliole_length_AVG, Foliole_max_length, Foliole_max_width, #Foliole_min_length and Foliole_min_width, Ratio_foliole_max, Ratio_foliole_min
+```
+
+We now want to visualize the distribution of our data to see if they have a normal distribution.
+
+```{r}
+df1 <- as.data.frame(UncorrelatedData)
+
+df1 %>%
+     gather() %>%
+     ggplot(aes(value)) +
+     facet_wrap(~ key, scales = "free") +
+     geom_histogram(fill="dodgerblue") + ggtitle("Paubrasilia histograms of uncorrelated variables")
+
+shapiro.test(df1$Pet_AVG) # doesn't have a normal distribution for example
+shapiro.test(df1$RACHIS1_AVG) # doesn't have a normal distribution for example
+shapiro.test(df1$Pinna_length_AVG) # doesn't have a normal distribution for example
+shapiro.test(df1$FOLIOLE_LENGTH_AVG) # doesn't have a normal distribution for example
+shapiro.test(df1$AVG_Ratio_Foliole) # Has a normal distribution
+
+ggqqplot(df1$Pet_AVG, main = "QQ-plot of the avrage proportion of rachis one divided by leaf length")#
+ggqqplot(df1$RACHIS1_AVG, main = "QQ-plot of the avrage proportion of rachis one divided by leaf length")#
+ggqqplot(df1$Pinna_length_AVG, main = "QQ-plot of the avrage proportion of rachis one divided by leaf length")#
+ggqqplot(df1$FOLIOLE_LENGTH_AVG, main = "QQ-plot of the avrage proportion of rachis one divided by leaf length")#Strong departure
+ggqqplot(df1$AVG_Ratio_Foliole, main = "QQ-plot of the avrage proportion of rachis one divided by leaf length")#This is closest to normal distribution
+```
+Several points within the avrage proportion of rachis one to leaf length (AVG_Prop_R1_leaf) fall outside of the normal distribution.
+
+We can perform data transformations to even these out and get rid of outliers.We want to square root all variables.
+Now we compare the transformed data to the untransformed data
+
+```{r}
+
+df4 <- sqrt(df1)
+
+df4 %>%
+     gather() %>%
+     ggplot(aes(value)) +
+     facet_wrap(~ key, scales = "free") +
+     geom_histogram(fill="dodgerblue") + ggtitle("Histograms of square root transformed variables")
+
+shapiro.test(df4$Pet_AVG) # doesn't have a normal distribution for example
+shapiro.test(df4$RACHIS1_AVG) # Has a normal distribution
+shapiro.test(df4$Pinna_length_AVG) # doesn't have a normal distribution for example
+shapiro.test(df4$FOLIOLE_LENGTH_AVG) # doesn't have a normal distribution for example
+
+ggqqplot(df4$Pet_AVG, main = "QQ-plot of the avrage proportion of rachis one divided by leaf length")#
+ggqqplot(df4$RACHIS1_AVG, main = "QQ-plot of the avrage proportion of rachis one divided by leaf length")# Has a normal distribution
+ggqqplot(df4$Pinna_length_AVG, main = "QQ-plot of the avrage proportion of rachis one divided by leaf length")#
+ggqqplot(df4$FOLIOLE_LENGTH_AVG, main = "QQ-plot of the avrage proportion of rachis one divided by leaf length")#Strong departure
+```
+
+We can also try with only log transformation for all variables.
+
+```{r}
+df5 <- as.data.frame(log(Data.imputepca)) 
+
+#fix(df5) #to replace the -inf values
+
+df5 %>%
+     gather() %>%
+     ggplot(aes(value)) +
+     facet_wrap(~ key, scales = "free") +
+     geom_histogram(aes(y=..density..) ,fill="dodgerblue") + ggtitle("Paubrasilia histograms of log-transformed variables") + geom_density()
+
+
+
+shapiro.test(df5$Pet_AVG) # Has a normal distribution
+shapiro.test(df5$RACHIS1_AVG) # Has a normal distribution
+shapiro.test(df5$Pinna_length_AVG) # doesn't have a normal distribution for example
+shapiro.test(df5$FOLIOLE_LENGTH_AVG) # Nope
+
+ggqqplot(df5$Pet_AVG, main = "QQ-plot of the avrage proportion of rachis one divided by leaf length")# log transformed is best.
+ggqqplot(df5$RACHIS1_AVG, main = "QQ-plot of the avrage proportion of rachis one divided by leaf length")# square root is gone.
+ggqqplot(df5$Pinna_length_AVG, main = "QQ-plot of the avrage proportion of rachis one divided by leaf length")# Departure, but better
+ggqqplot(df5$FOLIOLE_LENGTH_AVG, main = "QQ-plot of the avrage proportion of rachis one divided by leaf length")#Departure, but better
+```
+
+Results are very similar to the square root transformation and don't help resolve a normal distribution for some variables.
+
+----------------------------------------------------------------------
+
+We can perform a clustering analysis on the data to determine how many groups it contains.
+To do so we perform a hierarchical method: Ward's hierarchical clustering, based on Euclidian distances
+
+```{r}
+
+df2<-df1
+df2$Pet_AVG<-log(df1$Pet_AVG)#log
+df2$RACHIS1_AVG<-sqrt(df1$RACHIS1_AVG)#sqrt
+df2$Pinna_length_AVG<-log(df1$Pinna_length_AVG)#log
+df2$FOLIOLE_LENGTH_AVG<-log(df1$FOLIOLE_LENGTH_AVG)#log
+df2$State<-Cleaned.LeafData2$State
+
+df2[,1:5] %>%
+     gather() %>%
+     ggplot(aes(value)) +
+     facet_wrap(~ key, scales = "free") +
+     geom_histogram(fill="dodgerblue") + ggtitle("Paubrasilia histograms of uncorrelated variables")
+
+getwd()
+ggsave("histogram_5vars_transformed.pdf")
+
+mydata<- scale(df2[,1:5]) # standardize variables of uncorrelated square root transformed data
+
+
+# with all variables log transformed
+#mydata2.log <- scale(df5) # standardize all log transformed variables
+```
+
+
+```{r}
+#Ward Hierarchical clustering based on euclidean distance matrix with uncorrelated transformed variables
+mydata<- scale(df2[,1:5])
+
+d<- dist(mydata, method= "euclidean") # euclidean distance matrix
+#d<-vegdist(mydata,method='bray')
+fit<- hclust(d, method = "ward.D") 
+
+pdf("Ward_dendrogram_1vars_transformed_k2.pdf",width=8.5, height=12)
+plot(fit, main = "Cluster dendrogram of uncorrelated  transformed data", cex= 0.7) #display dendrogram
+rect.hclust(fit, k= 2, border = c("red", "blue")) # k= is adaptable to how many clusters are found in the following steps
+dev.off()
+
+pdf("Ward_dendrogram_5vars_transformed.pdf",width=8.5, height=12)
+plot(fit, main = "Cluster dendrogram of uncorrelated  transformed data", cex= 0.7) #display dendrogram
+#rect.hclust(fit, k= 2, border = c("red", "blue")) # k= is adaptable to how many clusters are found in the following steps
+dev.off()
+
+
+
+pdf("Ward_dendrogram_5vars_transformed_k3.pdf",width=8.5, height=12)
+plot(fit, main = "Cluster dendrogram of uncorrelated  transformed data", cex= 0.7) #display dendrogram
+rect.hclust(fit, k= 3, border = c("red", "green", "blue")) # k= is adaptable to how many clusters are found in the following steps
+dev.off()
+
+plot(fit, main = "Cluster dendrogram of uncorrelated  transformed data", cex= 0.7) #display dendrogram
+
+rect.hclust(fit, k= 3, border = c("red", "green", "blue")) # k= is adaptable to how many clusters are found in the following steps
+#rect.hclust(fit, k= 4, border = c("red", "green", "blue")) # k= is adaptable to how many clusters are found in the following steps
+#rect.hclust(fit, k= 5, border = c("red", "green", "blue")) # k= is adaptable to how many clusters are found in the following steps
+
+```
+
+It also doesn't tell us into how many clusters we should break up the data.
+We can use partitioning methods to get an idea of how many clusters best fit our data.
+
+```{r}
+#determining number of clusters using k-means partitioning from all variables log transformed http://statmethods.net/advstats/cluster.html
+
+# using the elbow method
+set.seed(123)
+
+wss<- function(k) {
+  kmeans(mydata, k, nstart = 1000)$tot.withinss
+}
+df5.1<-fviz_nbclust(mydata, kmeans, method = "wss")
+plot(df5.1)
+
+#same result with different function
+wss<- (nrow(mydata) -1) * sum(apply(mydata, 2, var))
+for (i in 2:15) wss[i] <- sum(kmeans(mydata,
+    centers= i, nstart = 10)$withinss)
+plot(1:15, wss, type="b", xlab = "Number of clusters",
+     ylab = "Within groups sum of squares")
+```
+
+
+The average silhouette method is another similar function to give us a better idea of how many clusters should be selected
+
+```{r}
+# using the average silhouette method
+df6<- fviz_nbclust(mydata, kmeans, nstart=1000, method = "silhouette")
+pdf("silhouette_method_klusters.pdf")
+plot(df6)
+dev.off()
+
+#for the square root transformed data
+df6.1<-fviz_nbclust(mydata, kmeans, nstart=1000, method = "silhouette")
+plot(df6.1)
+
+```
+
+This technique shows us the optimum number of clusters is 2.
+
+CascadeKM calculates several k means in one function and returns the best result.
+
+```{r}
+# using the cascadeKM function from "Numerical Ecology with R" p.83
+
+fit2 <- cascadeKM(mydata, inf.gr = 1, sup.gr = 10, iter = 1000, criterion = "calinski")
+pdf("K-means_calinski_criterion.pdf")
+plot(fit2, sortg= TRUE)
+dev.off()
+
+plot(fit2, sortg= TRUE)
+
+
+fit2$results
+fit2$partition
+
+
+
+```
+
+This last function tells us that the optimal number of clusters is 2 under the calinski criterion for the log transformed data but k=3 for the square root transfomed data
+
+-------------------------------------------------------------------------
+
+
+```{r}
+# K-means Cluster Analysis on uncorrelated square root transformed data
+fit4 <- kmeans(df2[,1:5], centers=2, nstart=1000) #2 cluster solution
+
+
+
+# for k=2
+fviz_cluster(object = list(data = df2[,1:5], cluster = fit4$cluster),
+             repel = TRUE, main = "Cluster plot of uncorrelated square root transformed variables")
+
+fviz_cluster(object = list(data = df2[,1:5], cluster = fit4$cluster),
+             repel = FALSE, main = "Cluster plot of uncorrelated square root transformed variables")
+
+```
+
+
+--------------------------------------------------------------------
+
+We can perfom further PCA analyses to determine which variable has the most influence on the distribution of the data.
+
+```{r}
+# more PCA plots of uncorrelated square root transformed data k=2
+
+df2$State[c(15,32,43,44,45,46,47,54)]<-"BA1" #specifying region of southern Bahia
+df2$Cluster<-Cleaned.LeafData2$Morphotype
+
+df2a<-df2
+#remove 7910
+#df2<-df2[-54,]
+
+#Draws circle of contribution with morphological variables.
+LeafPCA<-PCA(df2[,1:5], scale.unit = TRUE, graph = FALSE)
+
+#Draws ellipses around 2 main groups
+fviz_pca_var(LeafPCA, repel = TRUE, col.var = "contrib") +
+  scale_color_gradient2(low = "blue", mid = "gray83", high = "red", midpoint = 8.0)
+
+#Draws ellipses around 2 main groups
+#fviz_pca_ind(LeafPCA, label = "none", habillage = as.factor(fit2$cluster),
+#             addEllipses = FALSE, ellipse.level = 0.95)
+
+clustertag <- as.factor(fit2$cluster) # We have to create a factor object of the cluster groups to perform the following plot
+
+#clustertag.1 <- as.factor(fit5$cluster) #for k=3
+
+res.pca <- prcomp(df2[, -c(6,7)],  scale = TRUE)
+
+
+p1<-fviz_eig(res.pca) #shows % of variation for each axis
+p1
+ggsave("eigenvalues.pdf")
+
+
+res.var <- get_pca_var(res.pca)
+#res.var$coord          # CoordonnÃ©es
+res.var$contrib        # Contributions aux axes
+res.var$cos2           # Qualit? de repr?sentation 
+
+# res.var$contrib        # Contributions aux axes
+#                       Dim.1     Dim.2      Dim.3       Dim.4      Dim.5
+#Pet_AVG            11.189172 29.004211  0.8258658 58.76860847  0.2121421
+#RACHIS1_AVG        35.169353  0.987545 16.4815893 16.80333164 30.5581807
+#Pinna_length_AVG    2.878579 54.181491  4.5205782 19.55293426 18.8664168
+#FOLIOLE_LENGTH_AVG 39.755713  9.696501  0.8094676  0.06092261 49.6773955
+#AVG_Ratio_Foliole  11.007182  6.130251 77.3624990  4.81420302  0.6858649
+
+#                       > res.var$cos2           # Qualit? de repr?sentation 
+#                        Dim.1      Dim.2       Dim.3        Dim.4        Dim.5
+#Pet_AVG            0.21752054 0.40019199 0.007147593 0.3747728196 0.0003670591
+#RACHIS1_AVG        0.68370177 0.01362587 0.142642648 0.1071563909 0.0528733261
+#Pinna_length_AVG   0.05596036 0.74758104 0.039124094 0.1246908595 0.0326436386
+#FOLIOLE_LENGTH_AVG 0.77286184 0.13378961 0.007005672 0.0003885091 0.0859543687
+#AVG_Ratio_Foliole  0.21398261 0.08458348 0.669546575 0.0307006153 0.0011867185
+
+
+library("corrplot")
+p3<-corrplot(res.var$contrib, is.corr=FALSE)
+#p3
+
+getwd()
+
+pdf("corrplot_contrib.pdf")
+corrplot(res.var$contrib, is.corr=FALSE)
+dev.off()
+#ggsave("corrplot_contrib.pdf")
+
+```
+
+This next section gives the final PCA figure.
+
+```{r}
+library(ggplot2)
+
+
+final_PCA<-autoplot(res.pca,data=df2, colour="Cluster",shape="Cluster",size=2)+theme_minimal()+scale_shape_manual(values=c(9,19,15,11,17))
+final_PCA
+ggsave("final_PCA.pdf")
+
+#This is the final version, but still need to modify the colors so that they make sense.If I can, only color specimens that were included in the dataset. Also indicate the location of the admixed individual.
+
+myCol <- c("red","grey","cornflowerblue","coral","turquoise") 
+final_PCA2<-autoplot(res.pca,data=df2, colour="Cluster",shape="Cluster",size=2,loadings = TRUE, loadings.colour = 'blue',loadings.label = TRUE, loadings.label.size =2, loadings.label.color="blue")+theme_minimal()+scale_shape_manual(values=c(7,19,15,9,17))+scale_color_manual(values=myCol)
+
+final_PCA2
+ggsave("final_PCA3.pdf")
+
+```
+
+
+
+```{r}
+
+#datagbs <- read.table("C:/Users/edeli/OneDrive/Projets_Recherche/2018_Paubrasilia/Matthew_Rees_documents/Supplementary materials/Supplementary materials 4/cleanedGBSdata2_nonmerged_v2.txt", stringsAsFactors=FALSE)
+
+df1 #untrasnformed data
+df2 # transformed data
+
+#So instead, I will use the dataset I've been using with the PCA and other analyses, and then just as a genetic cluster
+#I shoudl be running this on the raw variables
+
+#toto<-read.csv("C:/Users/edeli/OneDrive/Projets_Recherche/2018_Paubrasilia/Manuscripts/Appendix_Figures/association_matrix_v2.csv",header=TRUE)
+#toto
+
+df3<-cbind(df1,df2$Cluster)
+
+names(df3)[6]<-"Cluster"
+
+df3$Cluster<-as.factor(df3$Cluster)
+#df3$Dendrogram_2<-as.factor(df3$Dendrogram_2)
+
+x<-names(df3[c(1:5)])
+```
+
+```{r}
+#Then I run the boxplot script to see how it turns out.
+#This is for the two clusters
+plot.list<-list()
+#pdf("Boxplots_Solanum_8vars_nichebreadth_v2.pdf",width=8, height=6)
+
+for (i in 1:length(x))
+{
+  #i<-1
+  print(x[i])
+  #  pdf(paste(wd,"/boxplot_output/Boxplots_Solanun_",x[i],"_mean.pdf",sep=""),width=8, height=6)
+  
+  plot.list[[i]]<-ggplot(df3, aes_string(x ="Cluster", y =x[i] , fill = "Cluster")) +
+    geom_boxplot() +
+    #    geom_jitter(shape = 15,
+    #                color = "steelblue",
+    #                position = position_jitter(0.21)) +
+#    scale_fill_manual(values=c(ng.col, rh.col,tb.col,"white"))+ #fix the colors, ng
+    theme_minimal()+
+    theme(legend.position="none",
+          axis.title.x=element_blank(),
+          axis.text.x=element_blank(),
+          axis.ticks.x=element_blank()) +
+    ggtitle(x[i])
+  print(plot.list[[i]])  
+  
+}
+#dev.off()     
+
+library(gridExtra)
+library(cowplot)
+do.call('grid.arrange',plot.list) #, ncol = 3))
+
+#This is to get the legend
+toto2<-ggplot(df3, aes_string(x ="Cluster", y =x[i] , fill = "Cluster")) +
+    geom_boxplot() +
+    #    geom_jitter(shape = 15,
+    #                color = "steelblue",
+    #                position = position_jitter(0.21)) +
+#    scale_fill_manual(values=c(ng.col, rh.col,tb.col,"white"))+ #fix the colors, ng
+    theme_minimal()+
+    theme(legend.position="left",
+          axis.title.x=element_blank(),
+          axis.text.x=element_blank(),
+          axis.ticks.x=element_blank()) +
+    ggtitle(x[i])
+legend <- cowplot::get_legend(toto2)
+
+#legend <- cowplot::get_legend(bp2)
+#plot.list[[length(x)+1]]<-bp
+plot.list[[length(x)+1]]<-legend
+
+#grid.fig<-do.call('grid.arrange',plot.list[[1:11]]) #, ncol = 3)))
+#grid.fig
+do.call('grid.arrange',plot.list) #, ncol = 3))
+
+ggsave(file="Boxplots_Morphotypes.pdf",width=8, height=8)
+ggsave(file="Boxplots_Morphotypes.png",width=8, height=8,units="in")
+
+
+```
+
+
+
+
+```{r}
+#Removing the Cultivated specimens
+#Removing the hybrids
+df3a<-df3[-c(4,21,22,29,33:36,15,42),] #Hybrids are 15 and 42
+#df3[47,]
+
+#assigning genotype to specimens
+as.factor(df3a$Cluster)
+genotype<-c("North","Arruda_BA","North","Arruda_BA","Arruda_BA","Arruda_BA","Arruda_BA","Arruda_BA",
+"Arruda_BA","Arruda_BA","Arruda_BA","Arruda_BA","Laranja","Laranja","Laranja","Laranja","Laranja",
+"Arruda_BA","Laranja","Cafe","Cafe","North","Laranja","Cafe","North","Arruda_RJ","Cafe","Cafe","Cafe","North","North","Cafe",
+"North","North","Arruda_RJ","Arruda_RJ","Arruda_RJ","Arruda_BA",
+"Arruda_RJ","Arruda_RJ","Arruda_RJ","Arruda_RJ","Arruda_RJ","Arruda_RJ","North","North")
+
+df3a$genotype<-genotype
+df3a$genotype<-as.factor(df3a$genotype)
+
+plot.list<-list()
+#pdf("Boxplots_Solanum_8vars_nichebreadth_v2.pdf",width=8, height=6)
+
+for (i in 1:length(x))
+{
+  #i<-1
+  print(x[i])
+  #  pdf(paste(wd,"/boxplot_output/Boxplots_Solanun_",x[i],"_mean.pdf",sep=""),width=8, height=6)
+  
+  plot.list[[i]]<-ggplot(df3a, aes_string(x ="genotype", y =x[i] , fill = "genotype")) +
+    geom_boxplot() +
+    #    geom_jitter(shape = 15,
+    #                color = "steelblue",
+    #                position = position_jitter(0.21)) +
+    scale_fill_manual(values=c("orchid","yellowgreen","cornflowerblue","coral","turquoise"))+ #fix the colors, ng
+        theme_minimal()+
+    theme(legend.position="none",
+          axis.title.x=element_blank(),
+          axis.text.x=element_blank(),
+          axis.ticks.x=element_blank()) +
+    ggtitle(x[i])
+  print(plot.list[[i]])  
+  
+}
+#dev.off()     
+
+library(gridExtra)
+library(cowplot)
+do.call('grid.arrange',plot.list) #, ncol = 3))
+
+#This is to get the legend
+toto2<-ggplot(df3a, aes_string(x ="genotype", y =x[i] , fill = "genotype")) +
+    geom_boxplot() +
+    #    geom_jitter(shape = 15,
+    #                color = "steelblue",
+    #                position = position_jitter(0.21)) +
+    scale_fill_manual(values=c("orchid","yellowgreen","cornflowerblue","coral","turquoise"))+ #fix the colors, ng
+    theme_minimal()+
+    theme(legend.position="left",
+          axis.title.x=element_blank(),
+          axis.text.x=element_blank(),
+          axis.ticks.x=element_blank()) +
+    ggtitle(x[i])
+legend <- cowplot::get_legend(toto2)
+
+#legend <- cowplot::get_legend(bp2)
+#plot.list[[length(x)+1]]<-bp
+plot.list[[length(x)+1]]<-legend
+
+#grid.fig<-do.call('grid.arrange',plot.list[[1:11]]) #, ncol = 3)))
+#grid.fig
+do.call('grid.arrange',plot.list) #, ncol = 3))
+
+ggsave(file="Boxplots_genotypes_v2.pdf",width=8, height=8)
+ggsave(file="Boxplots_genotypes_v2.png",width=8, height=8,units="in")
+
+
+```
+
+
+
+Because many of our variables don't have a normal distribution (see l.150), we will compare the significance of differences of non-parametric (Kruskal-Wallis and Mood's median test) tests to test for the significance in the difference between several means/medians of our variables.
+
+www.stdha.com/english/wiki/one-way-anova-test-in-r
+
+First we get summary statistics.
+
+```{r}
+#Summary statistics
+df3a %>%
+  group_by(genotype) %>%
+  get_summary_stats(FOLIOLE_LENGTH_AVG, type = "mean_sd")
+
+df3a %>%
+  group_by(genotype) %>%
+  get_summary_stats(FOLIOLE_LENGTH_AVG, type = "median")
+
+
+df3a %>%
+  group_by(genotype) %>%
+  get_summary_stats(Pet_AVG, type = "mean_sd")
+
+df3a %>%
+  group_by(genotype) %>%
+  get_summary_stats(Pet_AVG, type = "median")
+
+df3a %>%
+  group_by(genotype) %>%
+  get_summary_stats(RACHIS1_AVG, type = "mean_sd")
+
+df3a %>%
+  group_by(genotype) %>%
+  get_summary_stats(RACHIS1_AVG, type = "median")
+
+df3a %>%
+  group_by(genotype) %>%
+  get_summary_stats(Pinna_length_AVG, type = "mean_sd")
+
+df3a %>%
+  group_by(genotype) %>%
+  get_summary_stats(Pinna_length_AVG, type = "median")
+
+df3a %>%
+  group_by(genotype) %>%
+  get_summary_stats(AVG_Ratio_Foliole, type = "mean_sd")
+
+df3a %>%
+  group_by(genotype) %>%
+  get_summary_stats(AVG_Ratio_Foliole, type = "median")
+
+
+```
+
+Levene's test shows there is no significant difference in the variance within groups.
+The next section also shows that there are significant differences amongst the different groups.
+
+```{r}
+# using the Kruskal-Wallis test
+
+
+######### Doing the Kruskall-Wallis test, a non-parametric test
+#https://www.datanovia.com/en/lessons/kruskal-wallis-test-in-r/
+library(tidyverse)
+library(ggpubr)
+library(rstatix)
+
+df3a$Cluster<-as.factor(df3a$genotype)
+res.kruskal <- df3a %>% kruskal_test(FOLIOLE_LENGTH_AVG ~ genotype)
+res.kruskal
+# A tibble: 1 x 6
+#.y.            n statistic    df     p method        
+#* <chr>      <int>     <dbl> <int> <dbl> <chr>         
+#  1 logbreadth  1063      0.471     2  0.79 Kruskal-Wallis
+#This is not significant...
+res.kruskal2 <- df3a %>% kruskal_test(Pet_AVG ~ genotype)
+res.kruskal2
+
+res.kruskal3 <- df3a %>% kruskal_test(Pinna_length_AVG ~ genotype)
+res.kruskal3
+
+res.kruskal4 <- df3a %>% kruskal_test(RACHIS1_AVG ~ genotype)
+res.kruskal4
+
+res.kruskal5 <- df3a %>% kruskal_test(AVG_Ratio_Foliole ~ genotype)
+res.kruskal5
+
+
+df3a %>% kruskal_effsize(FOLIOLE_LENGTH_AVG ~ genotype) #magnitude is small, less than 0.006
+df3a %>% kruskal_effsize(Pet_AVG ~ genotype) #magnitude is small, less than 0.006
+df3a %>% kruskal_effsize(RACHIS1_AVG ~ genotype) #magnitude is small, less than 0.006
+df3a %>% kruskal_effsize(Pinna_length_AVG ~ genotype) #magnitude is small, less than 0.006
+df3a %>% kruskal_effsize(AVG_Ratio_Foliole ~ genotype) #magnitude is small, less than 0.006
+
+# A tibble: 1 x 5
+#.y.            n effsize method  magnitude
+#* <chr>      <int>   <dbl> <chr>   <ord>    
+#  1 logbreadth  1063 -0.00144 eta2[H] smal
+
+
+#Pairwise Comparison Dunn test
+pwc <- df3a %>% 
+  dunn_test(FOLIOLE_LENGTH_AVG ~ genotype, p.adjust.method = "bonferroni") 
+pwc
+
+pwc2 <- df3a %>% 
+  dunn_test(Pet_AVG ~ genotype, p.adjust.method = "bonferroni") 
+pwc2
+
+pwc3 <- df3a %>% 
+  dunn_test(RACHIS1_AVG ~ genotype, p.adjust.method = "bonferroni") 
+pwc3
+
+pwc4 <- df3a %>% 
+  dunn_test(AVG_Ratio_Foliole ~ genotype, p.adjust.method = "bonferroni") 
+pwc4
+
+pwc5 <- df3a %>% 
+  dunn_test(Pinna_length_AVG ~ genotype, p.adjust.method = "bonferroni") 
+pwc5
+
+
+
+```
+
+
+
