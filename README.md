@@ -2,7 +2,7 @@
 
 
 # Paubrasil
-Rees, M., Neaves, L., Lewis, G.P., Lima, H.C. & Gagnon, E. (in prep.) Combining phylogenomic and morphological data reveals new patterns of diversity in *Paubrasilia echinata*. BMC Ecology and Evolution.
+Rees, M., Neaves, L., Lewis, G.P., Lima, H.C. & Gagnon, E. (in prep.) Combining phylogenomic and morphological data reveals new patterns of diversity in *Paubrasilia echinata*.
  
 
 *Paubrasilia echinata* (Lam.) Gagnon, H.C.Lima & G.P.Lewis is an endangered species of the Brazilian atlantic forest.
